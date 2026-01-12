@@ -1,0 +1,19 @@
+# Data directories
+data/
+
+# Docker
+*.log
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Temp files
+*.tmp
+
