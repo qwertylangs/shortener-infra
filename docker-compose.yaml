@@ -1,8 +1,6 @@
-version: '3.8'
-
 services:
   frontend:
-    image: ghcr.io/${ACTOR_USERNAME}/shortener-front:latest
+    image: ghcr.io/${ACTOR_USERNAME}/url-shortener-front:latest
     restart: always
     environment:
       - IS_PRODUCTION_ENV=true
