@@ -16,22 +16,62 @@ services:
     build:
       context: ../url-shortener
       dockerfile: Dockerfile
+    depends_on:
+      api-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
+      interval: 3s
+      timeout: 2s
+      retries: 3
     restart: always
     volumes:
       - ./data/api:/app/storage
     environment:
       - CONFIG_PATH=/app/config/prod-docker.yaml 
-      - HTTP_SERVER_PASSWORD=shortener-secret
-  
+      - HTTP_SERVER_PASSWORD=${HTTP_SERVER_PASSWORD}
+
+  api-migrate:
+    build:
+      context: ../url-shortener
+      dockerfile: Dockerfile
+    container_name: api-migrator
+    command: [
+      "./migrator", 
+      "--storage-path=/app/storage/storage.db", 
+      "--migrations-path=/app/migrations"
+    ]
+    volumes:
+      - ./data/api:/app/storage
+    restart: "no"
+
   sso:
     build:
       context: ../sso
       dockerfile: Dockerfile
     restart: always
+    depends_on:
+      sso-migrate:
+        condition: service_completed_successfully
     volumes:
       - ./data/sso:/app/storage
     environment:
       - CONFIG_PATH=/app/config/prod-docker.yaml
+
+  sso-migrate:
+    build:
+      context: ../sso
+      dockerfile: Dockerfile
+    container_name: sso-migrator
+    command: [
+      "./migrator", 
+      "--storage-path=/app/storage/sso.db", 
+      "--migrations-path=/app/migrations"
+    ]
+    volumes:
+      - ./data/sso:/app/storage
+    # Этот контейнер должен успешно отработать перед запуском основного sso
+    restart: "no"
 
   nginx:
     image: nginx:latest
@@ -41,9 +81,12 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf
     depends_on:
-      - frontend
-      - api
-      - sso
+      frontend:
+        condition: service_started
+      api:
+        condition: service_healthy
+      sso:
+        condition: service_started
 
 networks:
   default:

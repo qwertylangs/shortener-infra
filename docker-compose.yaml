@@ -2,27 +2,64 @@ version: '3.8'
 
 services:
   frontend:
-    image: ghcr.io/YOUR_USERNAME/shortener-front:latest
+    image: ghcr.io/${ACTOR_USERNAME}/shortener-front:latest
     restart: always
     environment:
       - IS_PRODUCTION_ENV=true
 
   api:
-    image: ghcr.io/YOUR_USERNAME/url-shortener:latest
+    image: ghcr.io/${ACTOR_USERNAME}/url-shortener:latest
     restart: always
+    depends_on:
+      api-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
     volumes:
       - ./data/api:/app/storage
     environment:
       - CONFIG_PATH=/app/config/prod-docker.yaml 
-      - HTTP_SERVER_PASSWORD=shortener-secret
+      - HTTP_SERVER_PASSWORD=${HTTP_SERVER_PASSWORD}
+
+  api-migrate:
+    image: ghcr.io/${ACTOR_USERNAME}/url-shortener:latest
+    container_name: api-migrator
+    command: [
+      "./migrator", 
+      "--storage-path=/app/storage/storage.db", 
+      "--migrations-path=/app/migrations"
+    ]
+    volumes:
+      - ./data/api:/app/storage
+    restart: "no"
   
   sso:
-    image: ghcr.io/YOUR_USERNAME/sso:latest
+    image: ghcr.io/${ACTOR_USERNAME}/sso:latest
     restart: always
+    depends_on:
+      sso-migrate:
+        condition: service_completed_successfully
     volumes:
       - ./data/sso:/app/storage
     environment:
-      - CONFIG_PATH=/app/config/prod-docker.yaml 
+      - CONFIG_PATH=/app/config/prod-docker.yaml
+
+  sso-migrate:
+    image: ghcr.io/${ACTOR_USERNAME}/sso:latest
+    container_name: sso-migrator
+    command: [
+      "./migrator", 
+      "--storage-path=/app/storage/sso.db", 
+      "--migrations-path=/app/migrations"
+    ]
+    volumes:
+      - ./data/sso:/app/storage
+    # Этот контейнер должен успешно отработать перед запуском основного sso
+    restart: "no"
+
 
   nginx:
     image: nginx:latest
@@ -32,9 +69,12 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf
     depends_on:
-      - frontend
-      - api
-      - sso
+      frontend:
+        condition: service_started
+      api:
+        condition: service_healthy
+      sso:
+        condition: service_started
 
 networks:
   default:

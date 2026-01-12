@@ -12,31 +12,30 @@ on:
 jobs:
   deploy-infra:
     runs-on: ubuntu-latest
+    env:
+      HOST: root@178.72.136.82
+      DEPLOY_DIRECTORY: /root/apps/shortener-docker
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
       - name: Copy files to server
-        uses: appleboy/scp-action@master
-        with:
-          host: ${{ secrets.SERVER_IP }}
-          username: root
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          # Копируем всё содержимое репозитория в папку на сервере
-          source: "./docker-compose.yaml,./nginx/default.conf"
-          target: "/root/apps/my-project"
+        run: |
+          echo "$DEPLOY_SSH_KEY" > deploy_key.pem
+          chmod 600 deploy_key.pem
+          scp -i deploy_key.pem -o StrictHostKeyChecking=no ${{ github.workspace }}/docker-compose.yaml ${{ env.HOST }}:${{ env.DEPLOY_DIRECTORY }}
+          scp -i deploy_key.pem -o StrictHostKeyChecking=no ${{ github.workspace }}/nginx/nginx.conf ${{ env.HOST }}:${{ env.DEPLOY_DIRECTORY }}/nginx/nginx.conf
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
 
       - name: Apply changes
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.SERVER_IP }}
-          username: root
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            cd /root/apps/my-project
-            # Подтягиваем образы, если они изменились в compose
-            docker compose pull
-            # Перезапускаем контейнеры (docker сам поймет, что изменилось)
+        run: |
+          ssh -i deploy_key.pem ${{ env.HOST }} "
+            cd ${{ env.DEPLOY_DIRECTORY }} &&
+            echo "HTTP_SERVER_PASSWORD=${{ secrets.HTTP_SERVER_PASSWORD }}" > .env &&
+            echo "ACTOR_USERNAME=${{ github.actor }}" >> .env &&
+            chmod 600 .env &&
+            docker compose pull &&
             docker compose up -d
-            # Принудительно перезагружаем nginx внутри контейнера, если изменился только его конфиг
-            docker exec my-project-nginx-1 nginx -s reload
+          "
